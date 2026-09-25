@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VS Sudoku</title>
+<style>
+:root{--bg:#090b12;--card:#111522;--card2:#171b2a;--line:#2b3248;--text:#f6f7fb;--muted:#9ba3b8;--accent:#7c5cff;--good:#34d399;--bad:#fb7185}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#202548 0,#090b12 45%);color:var(--text);font-family:Inter,system-ui,sans-serif;min-height:100vh}
+button,input{font:inherit} .wrap{max-width:1100px;margin:auto;padding:28px 18px}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}h1{margin:0;font-size:30px;letter-spacing:-1px}.logo{display:flex;gap:10px;align-items:center}.dot{width:12px;height:12px;background:var(--accent);border-radius:50%;box-shadow:0 0 25px #7c5cff}
+.card{background:rgba(17,21,34,.88);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 20px 60px #0005}
+.lobby{max-width:620px;margin:70px auto}.sub{color:var(--muted);line-height:1.5}.row{display:flex;gap:10px;margin-top:16px}.row>*{flex:1}input{background:#0b0e18;border:1px solid var(--line);color:white;border-radius:12px;padding:13px;outline:none}button{border:0;border-radius:12px;padding:13px 16px;font-weight:750;cursor:pointer;background:var(--accent);color:white}button.secondary{background:#22283a}button:disabled{opacity:.5;cursor:not-allowed}
+.code{font-size:30px;font-weight:850;letter-spacing:6px;background:#0b0e18;border:1px dashed #46506d;border-radius:14px;padding:14px;text-align:center;margin:15px 0}.hidden{display:none!important}
+.gamehead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.pill{color:var(--muted);background:#0c101b;border:1px solid var(--line);padding:8px 11px;border-radius:999px;font-size:13px}.boards{display:grid;grid-template-columns:1fr 1fr;gap:20px}.player h2{font-size:16px;margin:0}.topline{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.progress{height:7px;background:#252b3c;border-radius:99px;overflow:hidden}.bar{height:100%;width:0;background:var(--accent);transition:width .2s}
+.board{display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;border:2px solid #727b96;border-radius:10px;overflow:hidden;background:#0a0d16}.cell{position:relative;border:1px solid #252c3e;display:grid;place-items:center;font-size:clamp(16px,3.1vw,27px);font-weight:700;background:#101522;cursor:pointer}.cell:nth-child(3n){border-right:2px solid #505a74}.cell:nth-child(9n){border-right:0}.cell:nth-child(n+19):nth-child(-n+27),.cell:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #505a74}.cell.given{background:#191e2d;color:#bfc6d8;cursor:default}.cell.selected{outline:3px solid var(--accent);outline-offset:-3px;background:#202741}.cell.correct{color:var(--good)}.cell.wrong{color:var(--bad);animation:shake .15s}.numbers{display:grid;grid-template-columns:repeat(9,1fr);gap:7px;margin-top:12px}.num{background:#20263a;padding:10px 4px}.status{text-align:center;margin-top:13px;color:var(--muted);min-height:22px}.winner{margin:16px 0;padding:14px;border:1px solid #3d8b70;background:#103126;border-radius:12px;text-align:center;color:#a7f3d0;font-weight:800}
+@keyframes shake{50%{transform:translateX(3px)}}@media(max-width:760px){.boards{grid-template-columns:1fr}.wrap{padding:16px}.lobby{margin:30px auto}.gamehead{align-items:flex-start;flex-direction:column}.row{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div class="logo"><span class="dot"></span><h1>VS Sudoku</h1></div><span class="pill" id="roomPill">No room</span></header>
+
+<section id="lobby" class="card lobby">
+<h2>1v1 Sudoku</h2>
+<p class="sub">You both get the <b>same puzzle</b>, but completely separate boards. Your moves never appear on your opponent's board.</p>
+<input id="name" placeholder="Your name" maxlength="18">
+<div class="row"><button onclick="createRoom()">Create room</button><button class="secondary" onclick="showJoin()">Join room</button></div>
+<div id="joinBox" class="hidden">
+<div class="row"><input id="code" placeholder="ROOM CODE" maxlength="4"><button onclick="joinRoom()">Join</button></div>
+</div>
+</section>
+
+<section id="waiting" class="card lobby hidden">
+<h2>Room created</h2><p class="sub">Send this code to your opponent.</p><div class="code" id="codeDisplay"></div>
+<p class="sub" id="waitText">Waiting for Player 2…</p>
+</section>
+
+<section id="game" class="hidden">
+<div class="gamehead"><div><b id="gameRoom"></b><div class="sub" id="gameStatus">Waiting…</div></div><button class="secondary" onclick="rematch()">Rematch</button></div>
+<div id="winner" class="winner hidden"></div>
+<div class="boards">
+<div class="card player"><div class="topline"><h2 id="meName">You</h2><span class="pill" id="mePct">0%</span></div><div class="progress"><div class="bar" id="meBar"></div></div><div id="myBoard" class="board"></div><div id="numbers" class="numbers"></div><div class="status" id="status"></div></div>
+<div class="card player"><div class="topline"><h2 id="oppName">Opponent</h2><span class="pill" id="oppPct">0%</span></div><div class="progress"><div class="bar" id="oppBar"></div></div><div class="board" id="oppBoard"></div><div class="status">Opponent's board is hidden — only progress is shown.</div></div>
+</div>
+</section>
+</div>
+<script>
+let ws, roomCode, playerId, slot, puzzle, solution, selected=-1, my=[];
+const $=id=>document.getElementById(id);
+function connect(){ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host);ws.onmessage=e=>handle(JSON.parse(e.data));ws.onclose=()=>{if(roomCode) $("gameStatus").textContent="Connection lost.";};}
+function send(x){if(ws?.readyState===1)ws.send(JSON.stringify(x))}
+function createRoom(){connect();setTimeout(()=>send({type:"create",name:$("name").value||"Player 1"}),100)}
+function showJoin(){$("joinBox").classList.remove("hidden")}
+function joinRoom(){connect();setTimeout(()=>send({type:"join",code:$("code").value.trim(),name:$("name").value||"Player 2"}),100)}
+function handle(m){
+ if(m.type==="error"){alert(m.message);return}
+ if(m.type==="joined"){playerId=m.playerId;slot=m.slot;roomCode=m.code;$("roomPill").textContent="Room "+roomCode;if(slot===0){$("lobby").classList.add("hidden");$("waiting").classList.remove("hidden");$("codeDisplay").textContent=roomCode}else $("lobby").classList.add("hidden");}
+ if(m.type==="room"){startOrUpdate(m)}
+ if(m.type==="opponent"){ $("oppPct").textContent=m.progress+"%";$("oppBar").style.width=m.progress+"%"; if(m.done) $("oppPct").textContent="DONE";}
+ if(m.type==="winner"){showWinner(m.name+" wins!");}
+ if(m.type==="left"){ $("gameStatus").textContent="Opponent left the room."; }
+}
+function startOrUpdate(m){
+ puzzle=m.puzzle;solution=m.solution;roomCode=m.room; $("roomPill").textContent="Room "+roomCode;
+ const me=m.players.find(p=>p.id===playerId), opp=m.players.find(p=>p.id!==playerId);
+ if(me){$("meName").textContent=me.name+" (You)";$("mePct").textContent=me.progress+"%";$("meBar").style.width=me.progress+"%";}
+ if(opp){$("oppName").textContent=opp.name; $("oppPct").textContent=opp.progress+"%";$("oppBar").style.width=opp.progress+"%";}
+ $("waiting").classList.add("hidden");$("game").classList.remove("hidden");
+ if(!my.length||m.rematch){my=Array(81).fill(0);selected=-1;render();}
+ $("gameStatus").textContent=m.started?"First to finish wins.":"Waiting for opponent…";
+ if(!m.started && slot===0)$("waitText").textContent="Player 2 joined!";
+}
+function render(){
+ const b=$("myBoard");b.innerHTML="";
+ for(let i=0;i<81;i++){const d=document.createElement("div");d.className="cell";let r=Math.floor(i/9),c=i%9;if(puzzle[r][c]){d.textContent=puzzle[r][c];d.classList.add("given")}else{d.textContent=my[i]||"";if(my[i])d.classList.add(my[i]===solution[r][c]?"correct":"wrong");if(selected===i)d.classList.add("selected");d.onclick=()=>{selected=i;render()}}b.appendChild(d)}
+ const n=$("numbers");n.innerHTML="";for(let x=1;x<=9;x++){let d=document.createElement("button");d.className="num";d.textContent=x;d.onclick=()=>put(x);n.appendChild(d)}
+}
+function put(n){if(selected<0)return;let r=Math.floor(selected/9),c=selected%9;if(puzzle[r][c])return;my[selected]=n;render();const correct=my.reduce((a,v,i)=>a+(v===solution[Math.floor(i/9)][i%9]?1:0),0);const filled=my.filter(Boolean).length;const pct=Math.round(correct/81*100);$("mePct").textContent=pct+"%";$("meBar").style.width=pct+"%";if(correct===81){send({type:"progress",progress:100,done:true});showWinner("You win! 🎉")}else send({type:"progress",progress:pct,done:false})}
+document.addEventListener("keydown",e=>{if(e.key>="1"&&e.key<="9")put(+e.key);if(e.key==="Backspace"&&selected>=0){my[selected]=0;render();}});
+function showWinner(t){$("winner").textContent=t;$("winner").classList.remove("hidden")}
+function rematch(){send({type:"rematch"})}
+</script>
+</body>
+</html>
